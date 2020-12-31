@@ -247,3 +247,5 @@ class Rottler {
     this._events[name].listener = null;
   }
 }
+
+module.exports = Rottler
