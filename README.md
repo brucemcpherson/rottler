@@ -275,3 +275,7 @@ but Apps Script probably is better suited to the aync/await style - like this
     handle(error)
   }
 ````
+
+## see also
+
+https://github.com/brucemcpherson/qottle
