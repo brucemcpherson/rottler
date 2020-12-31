@@ -1,0 +1,27 @@
+{
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/brucemcpherson/rottler"
+  },
+  "name": "rottler",
+  "author": "bruce mcpherson",
+  "description": "rate limit handling testing and throttling",
+  "version": "1.0.4",
+  "devDependencies": {
+    "ava": "^3.13.0"
+  },
+  "scripts": {
+    "test": "ava"
+  },
+  "license": "MIT",
+  "main": "./src/rottler.js",
+  "module": "./src/rottler.js",
+  "exports": {
+    "require": "./src/rottler.js",
+    "import": "./src/rottler.js"
+  },
+  "keywords": [
+    "ratelimit",
+    "throttle"
+  ]
+}
