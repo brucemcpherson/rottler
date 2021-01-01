@@ -47,6 +47,52 @@ class Rottler {
   }
 
   /**
+   * this is a static convenience function to get a row iterator to loop through an async array
+   * Use it like this
+   * const rows = [...the rows of data ...]
+   * const rot = new  Rottler(options)
+   * const rowIterator = Rottler.getRowIterator ({rows, rot })
+   * (async  () => {
+   *    for await (let result of rowIterator) {
+   *      // result will have {row, index, rows}
+   *    }
+   * })()
+   *}
+   *
+   * @param {object} options
+   * @param {*[]} options.rows array of whatever
+   * @param {Rottler} options.rot an instance of Rottler
+   */
+  static getRowIterator = ({ rows, rot }) => ({
+    [Symbol.asyncIterator]() {
+      return {
+        rowNumber: 0,
+        rows,
+        hasNext() {
+          return this.rowNumber < this.rows.length;
+        },
+        next() {
+          return this.hasNext()
+            ? rot.rottle().then(() => { 
+              const value = {
+                index: this.rowNumber,
+                row: this.rows[this.rowNumber],
+                rows: this.rows
+              };
+              this.rowNumber++;
+              return {
+                value,
+                done: false
+              }
+            }) : Promise.resolve({
+              done: true
+            })
+        }
+      };
+    },
+  });
+
+  /**
    *
    * @param {object} options
    * @param {number} [options.period = 60000] measure period in ms
@@ -177,7 +223,8 @@ class Rottler {
    * @return {Promise} will be resolved when it's safe to go
    */
   rottle() {
-    return this.waiter(this.waitTime());
+    const wt = this.waitTime();
+    return wt ? this.waiter(wt).then(() => this.useAsync()) : this.useAsync();
   }
 
   /**

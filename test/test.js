@@ -42,7 +42,7 @@ test("check delaythrottling", async (t) => {
   t.throws(() => r.use());
   // should not fail because weve rottled, but a ms could have passed
   t.is(r.waitTime() >= r.delay - 1, true);
-  await t.notThrowsAsync(() => r.rottle().then(() => r.use()));
+  await t.notThrowsAsync(() => r.rottle());
 });
 
 test("check multiple uses", async (t) => {
@@ -60,7 +60,7 @@ test("check multiple uses", async (t) => {
   t.throws(() => r.use());
 
   // shouldnt throw because it'll wait
-  await t.notThrowsAsync(() => r.rottle().then(() => r.use()));
+  await t.notThrowsAsync(() => r.rottle());
   t.is(r.rate - r.available(), r.size() )
 
 });
@@ -77,7 +77,7 @@ test("check throwing error", async (t) => {
   t.notThrows(() => r.use());
   t.notThrows(() => r.use());
   // shouldnt throw because it'll wait
-  await t.notThrowsAsync(() => r.rottle().then(() => r.use()));
+  await t.notThrowsAsync(() => r.rottle());
   t.is(r.rate - r.available(), r.size());
 });
 
@@ -90,9 +90,9 @@ test("limit uses", async (t) => {
   t.notThrows(() => r.use());
   // because of delay needed
   t.throws(() => r.use());
-  await t.notThrowsAsync(() => r.rottle().then(() => r.use()));
-  await t.notThrowsAsync(() => r.rottle().then(() => r.use()));
-  await t.notThrowsAsync(() => r.rottle().then(() => r.use()));
+  await t.notThrowsAsync(() => r.rottle());
+  await t.notThrowsAsync(() => r.rottle());
+  await t.notThrowsAsync(() => r.rottle());
 });
 
 test("check on", async (t) => {
@@ -112,9 +112,9 @@ test("check on", async (t) => {
   t.notThrows(() => r.use());
   t.notThrows(() => r.use());
   t.notThrows(() => r.use());
-  await t.notThrowsAsync(() => r.rottle().then(() => r.use()));
-  await t.notThrowsAsync(() => r.rottle().then(() => r.use()));
-  await t.notThrowsAsync(() => r.rottle().then(() => r.use()));
+  await t.notThrowsAsync(() => r.rottle());
+  await t.notThrowsAsync(() => r.rottle());
+  await t.notThrowsAsync(() => r.rottle());
 });
 
 test("check delaythrottling - async", async (t) => {
@@ -130,5 +130,18 @@ test("check delaythrottling - async", async (t) => {
   await t.throwsAsync(() => r.useAsync());
   // should not fail because weve rottled, but a ms could have passed
   t.is(r.waitTime() >= r.delay - 5, true);
-  await t.notThrowsAsync(() => r.rottle().then(() => r.useAsync()));
+  await t.notThrowsAsync(() => r.rottle());
 });
+
+test("check loop", async (t) => {
+  const rows = [1, 2, 3]
+  const rot = new Rottler({
+    delay: 1000,
+  });
+  const rowIterator = Rottler.getRowIterator({ rows, rot });
+  for await (let result of rowIterator) {
+    t.is(result.index, result.row - 1);
+    t.deepEqual(result.rows, rows);
+  }
+});
+

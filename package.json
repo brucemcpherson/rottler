@@ -6,7 +6,7 @@
   "name": "rottler",
   "author": "bruce mcpherson",
   "description": "rate limit handling testing and throttling",
-  "version": "1.0.4",
+  "version": "1.0.6",
   "devDependencies": {
     "ava": "^3.13.0"
   },

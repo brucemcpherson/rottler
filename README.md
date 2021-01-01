@@ -24,9 +24,37 @@ npm install rottler
 const rot = new Rottler (options)
 ````
 
-## API testing
+## the best bits
 
-Let's say you are writing some code to run against an API which has rate limits. 
+Before diving into the detail, here's the best bits
+- set up a rot according to your APIs rate limiting rules. This example is for an api that allows a maximum of 20 requests a minute, with at least 1 second between each one
+````
+  const rot = new Rottler ({
+    delay: Rottler.ms ('seconds' , 1),
+    period: Rottler.ms('minutes' , 1),
+    rate: 20
+  })
+````
+- loop through your data - each row in the array of data be presented in the loop at a rate that satisfies the rate limit rules
+````
+  // Node / JavaScript / Apps Script in an async function
+  const rowIterator = Rottler.getRowIterator({ rows, rot });
+  for await (let result of rowIterator) {
+    callYourApi (row)
+  }
+````
+or even simpler version for non async Apps Script
+````
+  //  Apps Script
+  for (let row of rows) {
+    Utilities.sleep (rot.waitTime())
+    callYourApi (row)
+  }
+````
+
+## API rate limit testing
+
+One use of rottler is for testing your code that is supossed to handle rate limiting by acting as a simulated rate limited API. Let's say you are writing some code to run against an API which has rate limits. 
 
 ````
 callApi()
@@ -98,7 +126,7 @@ console.log (rot.size())
 You can let just let rottle worry about waiting for the right time. This example will only run rot.use() when it knows it will fit inside the api rate limit parameters, and will wait for however long is necessary. 
 
 ````
-  rot.rottle ().then (()=>rot.use())
+  rot.rottle ().then (()=> ... do whatever)
 ````
 
 ### Applied to to api usage
@@ -107,7 +135,6 @@ Now we've seen how rot.use() simulates a rate limited API, but by mixing it into
 
 ````
   rot.rottle ()
-    .then (()=>rot.useAsync())
     .then (()=>callApi())
     .then (result => handle(result))
     .catch(error => handle(error))
@@ -150,7 +177,7 @@ These are the constructor options
 | period | 60000 | period over which ratelimitis measured  in ms|
 | rate | 10 | max no of calls in period |
 | delay | 5 | minimum wait between calls |
-| timeout | setTimeout | a funciton that needs to do the same as setTimeout |
+| timeout | setTimeout | a funciton that needs to do the same as setTimeout - this is required for Apps Script only|
 | throwError | true |whether an attempt to trigger .use or .useAsync outside of rate throws an error |
 
 ## methods
@@ -234,6 +261,7 @@ Some schemes reset the counter at specific times, or allow the carrying forward 
 
 You can of course reset the counters during use with rot.reset() if necessary.
 
+
 ## Special Google Apps Script treatment
 
 
@@ -253,29 +281,58 @@ const rot = new Rottle ({
 })
 ````
 
-Then we can use normal Apps Script functions with rate limiting being controlled by rottle. As below
+Then we can use normal Apps Script functions with rate limiting being controlled by rottle. As below.
 
 ````
   rot.rottle ()
-    .then (()=>rot.useAsync())
     .then (()=>UrlFetchApp.fetch(url))
     .then (result => handle(result))
     .catch(error => handle(error))
 ````
 
-but Apps Script probably is better suited to the aync/await style - like this
+but because Apps Script is synchronous and single threaded you can just do this intead
 
 ````
-  await rot.rottle ()
-  rot.use()
-  try {
-    const result = UrlFetchApp.fetch(url))
-    handle(result)
-  } catch (error) {
-    handle(error)
+  Utilities.sleep (rot.waitTime())
+  const result = UrlFetchApp.fetch(url)
+
+````
+
+
+
+## Special treatment for loops
+
+Rot is intended to be single threaded, so it's up to you to manage threading when using it to test your rate management app. 
+
+If you need concurrence, see https://github.com/brucemcpherson/qottle which allows you to queue concurrent requests according to rate limit rules.
+
+If you are using rottle to front calls to an API, at some point you'll need to handle looping. Looping in an async environment is pretty complicated because the normal forEach doesn't work, and if you use .map to create an array of promise they'll all kick off together. 
+
+In Apps Script, which is syncronous you don't need it - it's as simple as this
+
+````
+data.forEach (row => {
+  Utilities.sleep (rot.waitTime())
+  const result = UrlFetchApp.fetch(url)
+  // do something with the row and the result
+})
+````
+
+On node, and client side it's more complicated. However, Rottle provides a convenience static function to manage async looping. See this example.
+
+````
+
+  const rows = [1, 2, 3]
+  const rot = new Rottler({
+    delay: 1000,
+  });
+  const rowIterator = Rottler.getRowIterator({ rows, rot });
+  for await (let result of rowIterator) {
+    // in each loop you'll get the same stuff as you'd get in a forEach loop
+    // result looks like this -> {row, index, rows}
+    // do something with result.row.
+
   }
+
 ````
-
-## see also
-
-https://github.com/brucemcpherson/qottle
+Using this approach, each row will be served according to the rate limit rules. 
