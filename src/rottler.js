@@ -47,73 +47,32 @@ class Rottler {
   }
 
   /**
-   * this is a static convenience function to get a row iterator to loop through an async array
-   * Use it like this
-   * const rows = [...the rows of data ...]
-   * const rot = new  Rottler(options)
-   * const rowIterator = Rottler.getRowIterator ({rows, rot })
-   * (async  () => {
-   *    for await (let result of rowIterator) {
-   *      // result will have {row, index, rows}
-   *    }
-   * })()
-   *}
-   *
-   * @param {object} options
-   * @param {*[]} options.rows array of whatever
-   * @param {Rottler} options.rot an instance of Rottler
-   */
-  static getRowIterator = ({ rows, rot }) => ({
-    [Symbol.asyncIterator]() {
-      return {
-        rowNumber: 0,
-        rows,
-        hasNext() {
-          return this.rowNumber < this.rows.length;
-        },
-        next() {
-          return this.hasNext()
-            ? rot.rottle().then(() => { 
-              const value = {
-                index: this.rowNumber,
-                row: this.rows[this.rowNumber],
-                rows: this.rows
-              };
-              this.rowNumber++;
-              return {
-                value,
-                done: false
-              }
-            }) : Promise.resolve({
-              done: true
-            })
-        }
-      };
-    },
-  });
-
-  /**
    *
    * @param {object} options
    * @param {number} [options.period = 60000] measure period in ms
    * @param {number} [options.rate = 10] how many calls allowed in that period
-   * @param {number} [options.delay = 5] delay in ms between each call
+   * @param {number} [options.delay = 10] delay in ms between each call
    * @param {function} [options.timeout] the setTimeout function (usuall setTimeout is the default)
    * @param {boolean} [options.throwError = true] whether to throw an error on rate limit problem
+   * @param {boolean} [options.synch = false] synch or asynch rottle
+   * @param {function} [options.sleep] a synch sleeping function (apps script - Utilities.sleep)
    * @return {Rottler}
    */
   constructor({
     period = 60 * 1000,
     rate = 10,
-    delay = 5,
+    delay = 10,
     timeout,
     throwError = true,
+    synch = false,
+    sleep,
   } = {}) {
     this.period = period;
     this.rate = rate;
     this.delay = delay;
     this._entry = new RottlerEntry();
     this.throwError = throwError;
+    this.synch = synch;
     this._events = {
       rate: {
         name: "rate",
@@ -124,18 +83,44 @@ class Rottler {
         listener: null,
       },
     };
-    // this is needed because apps script doesnt have a setTimeout
-    // so a custom timeout can be passed over
-    this.setTimeout = timeout || setTimeout;
-    _checkFunction(this.setTimeout);
 
-    /**
-     *
-     * @param {number} ms number of ms to wait before calling
-     * @return {Promise} resolves to ms
-     */
-    this.waiter = (ms) =>
-      new Promise((resolve) => this.setTimeout(() => resolve(ms), ms));
+    // so a custom timeout can be passed over
+
+    // this is a sleep function - required if synch is true
+    this.sleep = sleep;
+    if (this.synch && !sleep) {
+      throw new Error("synch option needs a synch sleep function");
+    }
+    if (!this.synch) {
+      this.setTimeout = timeout;
+      if (!timeout && typeof setTimeout !== "undefined")
+        this.setTimeout = setTimeout;
+      _checkFunction(this.setTimeout);
+    }
+  }
+
+  /**
+   * @param {number} ms number of ms to wait before calling
+   * @return {Promise} resolves to ms
+   */
+  waiter(ms) {
+    return new Promise((resolve) => this.setTimeout(() => resolve(ms), ms));
+  }
+
+  /**
+   * throw a sync/async error
+   * @param {object} options
+   * @param {string} options.msg message
+   * @param {boolean} options.throwAsync whether to reject or throw
+   */
+  throw({ msg, throwAsync }) {
+    const e = new Error(msg);
+    if (throwAsync) {
+      return Promise.reject(e);
+    } else {
+      throw e;
+    }
+    throw e;
   }
 
   /**
@@ -158,6 +143,74 @@ class Rottler {
     return entry;
   }
 
+  /**
+   *
+   * @param {object} options
+   * @param {*[]} options.rows an array of data to iterate through
+   * @return {object} an iterator
+   */
+  rowIterator({ rows }) {
+    const self = this;
+    const getItem = (rowNumber) => {
+
+      const value = {
+        index: rowNumber,
+        row: rows[rowNumber],
+        rows,
+        waitTime: self.waitTime(),
+      };
+
+      const item = {
+        value,
+        done: false,
+      };
+      return item
+    }
+
+    return {
+      // will be selected in for await of..
+      [Symbol.asyncIterator]() {
+        return {
+          rowNumber: 0,
+          rows,
+          hasNext() {
+            return this.rowNumber < this.rows.length;
+          },
+          next() {
+            if (!this.hasNext()) {
+              return Promise.resolve({
+                done: true,
+              });
+            } else { 
+              const item = getItem(this.rowNumber++);
+              return self.rottle().then(() => item);
+            }
+          },
+        };
+      },
+      // will be selected in for of...
+      [Symbol.iterator]() {
+        return {
+          rowNumber: 0,
+          rows,
+          hasNext() {
+            return this.rowNumber < this.rows.length;
+          },
+          next() {
+            if (!this.hasNext()) {
+              return {
+                done: true,
+              };
+            } else {
+              const item = getItem(this.rowNumber++);
+              self.rottle()
+              return item
+            }
+          },
+        };
+      },
+    };
+  }
   /**
    * @return {number} the time now
    */
@@ -220,11 +273,19 @@ class Rottler {
 
   /**
    * this can be used to resolve once enough time has passed
-   * @return {Promise} will be resolved when it's safe to go
+   * @return {Promise|RottlerEntry} will be resolved when it's safe to go
    */
   rottle() {
     const wt = this.waitTime();
-    return wt ? this.waiter(wt).then(() => this.useAsync()) : this.useAsync();
+    if (this.synch) {
+      // if we have a synch sleep function - ie apps script
+      if (wt > 0) this.sleep(wt);
+      return this.use();
+    } else {
+      return wt > 0
+        ? this.waiter(wt).then(() => this.useAsync())
+        : this.useAsync();
+    }
   }
 
   /**
@@ -233,20 +294,22 @@ class Rottler {
   useAsync() {
     return new Promise((resolve, reject) => {
       try {
-        resolve(this.use());
-      } catch (err) {
-        reject(err);
+        const entry = this.use();
+        resolve(entry);
+      } catch (error) {
+        reject(error);
       }
     });
   }
 
   /**
    * test for quota left and update it if there is some
+   * @param {object} [options]
+   * @param {boolean} [options.throwsAsync] whether to reject ot throw
    * @return {RottlerEntry} the  entry if there is quota
    */
-  use() {
+  use({ throwAsync = false } = {}) {
     const entry = this._cleanEntry();
-    const now = this._now();
 
     // if there's enough quota, then update it
     if (this.available() < 1) {
@@ -254,26 +317,33 @@ class Rottler {
         this._events.rate.listener();
       }
       if (this.throwError) {
-        throw new Error(
-          `Rate limit error - attempt to use  more than ${this.rate} times in ${this.period}ms`
-        );
+        this.throw({
+          msg: `Rate limit error - attempt to use  more than ${this.rate} times in ${this.period}ms`,
+          throwAsync,
+        });
       }
     } else if (this.waitTime() > 0) {
       if (this._events.delay.listener) {
         this._events.delay.listener();
       }
       if (this.throwError) {
-        throw new Error(
-          `Rate limit delay error - attempt to use ${this.sinceLast()}ms after last - min delay is ${
+        this.throw({
+          msg: `Rate limit delay error - attempt to use ${this.sinceLast()}ms after last - min delay is ${
             this.delay
-          }ms`
-        );
+          }ms`,
+          throwAsync,
+        });
       }
     } else {
-      entry.uses.push(now);
+      const now = this._now();
       entry.lastUsedAt = now;
+      entry.uses.push(now);
     }
     return entry;
+  }
+
+  ms(...args) {
+    return this.constructor.ms(...args);
   }
 
   /**
@@ -294,5 +364,7 @@ class Rottler {
     this._events[name].listener = null;
   }
 }
+
+
 
 module.exports = Rottler

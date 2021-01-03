@@ -117,31 +117,58 @@ test("check on", async (t) => {
   await t.notThrowsAsync(() => r.rottle());
 });
 
-test("check delaythrottling - async", async (t) => {
-  const r = new Rottler({
-    delay: 5000,
-  });
-  // the first one should have no delay
-  t.is(r.waitTime(), 0);
-  t.is(r.available(), r.rate);
-  // this one should not throw because there's no delay on the first
-  await t.notThrowsAsync(() => r.useAsync());
-  // this one should throw because theres a delay on subsequent
-  await t.throwsAsync(() => r.useAsync());
-  // should not fail because weve rottled, but a ms could have passed
-  t.is(r.waitTime() >= r.delay - 5, true);
-  await t.notThrowsAsync(() => r.rottle());
-});
 
-test("check loop", async (t) => {
-  const rows = [1, 2, 3]
+
+test("check async loop", async (t) => {
+  const rows = [1, 2, 3];
   const rot = new Rottler({
     delay: 1000,
   });
-  const rowIterator = Rottler.getRowIterator({ rows, rot });
+  const rowIterator = rot.rowIterator({ rows });
+
   for await (let result of rowIterator) {
     t.is(result.index, result.row - 1);
     t.deepEqual(result.rows, rows);
   }
 });
 
+
+test("check delaythrottling - async", async (t) => {
+  const r = new Rottler({
+    delay: 5000,
+  });
+  
+  t.is(r.ms('seconds', 1), Rottler.ms("minutes",2) /120)
+
+  // the first one should have no delay
+  t.is(r.waitTime(), 0);
+  t.is(r.available(), r.rate);
+  // this one should not throw because there's no delay on the first
+  await t.notThrowsAsync(() => r.useAsync());
+  // this one should throw because theres a delay on subsequent
+
+  await t.throwsAsync(() => r.useAsync());
+  // should not fail because weve rottled, but a ms could have passed
+  t.is(r.waitTime() >= r.delay - 100, true);
+  await t.notThrowsAsync(() => r.rottle());
+});
+
+/*
+this needs to be tested on apps script
+test("check synch loop", async (t) => {
+  const rows = [1, 2, 3];
+  const rot = new Rottler({
+    delay: 3000,
+    // required for apps script which doesnt support for await of
+    synch: true,
+    // and we'll need simulate a blocking sleep like apps script
+    sleep: Utilities.sleep
+  });
+
+
+  for (let row of rows) {
+    await rot.rottle()
+    t.is(rot.waitTime() >= rot.delay -2  , true)
+  }
+});
+*/

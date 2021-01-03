@@ -37,20 +37,39 @@ Before diving into the detail, here's the best bits
 ````
 - loop through your data - each row in the array of data be presented in the loop at a rate that satisfies the rate limit rules
 ````
-  // Node / JavaScript / Apps Script in an async function
-  const rowIterator = Rottler.getRowIterator({ rows, rot });
-  for await (let result of rowIterator) {
+  // Node / JavaScript 
+  const rowIterator = rot.rowIterator({ rows });
+  for await (let {row} of rowIterator) {
     callYourApi (row)
   }
 ````
-or even simpler version for non async Apps Script
+- for non async Apps Script, you need to provide a timeout function and set synch to true
+````
+  const rot = new Rottler ({
+    delay: Rottler.ms ('seconds' , 1),
+    period: Rottler.ms('minutes' , 1),
+    rate: 20,
+    synch: true,
+    sleep: Utilities.sleep
+  })
+````
+- Apps script for forEach
 ````
   //  Apps Script
-  for (let row of rows) {
+  rows.forEach (row=> {
     Utilities.sleep (rot.waitTime())
+    rot.use()
     callYourApi (row)
+  })
+````
+- using an iterator with Apps Script 
+````
+  const rowIterator = rot.rowIterator({ rows });
+  for   (let {row} of rowIterator) {
+    /// do something with row
   }
 ````
+
 
 ## API rate limit testing
 
@@ -177,8 +196,10 @@ These are the constructor options
 | period | 60000 | period over which ratelimitis measured  in ms|
 | rate | 10 | max no of calls in period |
 | delay | 5 | minimum wait between calls |
-| timeout | setTimeout | a funciton that needs to do the same as setTimeout - this is required for Apps Script only|
+| timeout | setTimeout | a function that needs to do the same as setTimeout - unlikely to be needed|
 | throwError | true |whether an attempt to trigger .use or .useAsync outside of rate throws an error |
+| synch | false | how to handle waiting - you only need this if you plan to use the iterator method and provide a syncronous timeout via the timeout parameter |
+| sleep | | a synchronous sleep function for use when synch is true. This is mainly for Apps Script, and the correct value would be Utilities.sleep |
 
 ## methods
 
@@ -265,7 +286,7 @@ You can of course reset the counters during use with rot.reset() if necessary.
 ## Special Google Apps Script treatment
 
 
-Server side Google Apps Script is not asynchronous. It doesn't even have a setTimeout function, but it does syntactically support Promises, so to make all this work all we have to do is to provide a setTimeout like function like this.
+Server side Google Apps Script is not asynchronous. It doesn't even have a setTimeout function, but it does syntactically support Promises, so to make all this work all we have to do is to provide a sleep function (which is synchronous), and tell rottle you're working in synchronous mode
 
 
 ````
@@ -274,26 +295,16 @@ const rot = new Rottle ({
   period: ms('minute'),
   rate: 10,
   delay: ms('seconds', 2),
-  timeout: (func , ms ) => {
-    Utilities.sleep (ms)
-    func ()
-  }
+  sleep: Utilities.sleep,
+  synch: true
 })
 ````
 
-Then we can use normal Apps Script functions with rate limiting being controlled by rottle. As below.
-
-````
-  rot.rottle ()
-    .then (()=>UrlFetchApp.fetch(url))
-    .then (result => handle(result))
-    .catch(error => handle(error))
-````
-
-but because Apps Script is synchronous and single threaded you can just do this intead
+because Apps Script is synchronous and single threaded you can just do this 
 
 ````
   Utilities.sleep (rot.waitTime())
+  rot.use()
   const result = UrlFetchApp.fetch(url)
 
 ````
@@ -313,12 +324,12 @@ In Apps Script, which is syncronous you don't need it - it's as simple as this
 ````
 data.forEach (row => {
   Utilities.sleep (rot.waitTime())
-  const result = UrlFetchApp.fetch(url)
-  // do something with the row and the result
+  rot.use()
+  // do something with the row 
 })
 ````
 
-On node, and client side it's more complicated. However, Rottle provides a convenience static function to manage async looping. See this example.
+On node, and client side it's more complicated. However, Rottle provides a convenience static function to manage async looping. See this example. You can't use this pattern with Apps Script V8 as it doesn't support for-await-of.
 
 ````
 
@@ -326,13 +337,29 @@ On node, and client side it's more complicated. However, Rottle provides a conve
   const rot = new Rottler({
     delay: 1000,
   });
-  const rowIterator = Rottler.getRowIterator({ rows, rot });
+  const rowIterator = rot.rowIterator({ rows });
   for await (let result of rowIterator) {
-    // in each loop you'll get the same stuff as you'd get in a forEach loop
-    // result looks like this -> {row, index, rows}
-    // do something with result.row.
-
+    // do something with result.row which will contain the data
   }
 
 ````
-Using this approach, each row will be served according to the rate limit rules. 
+## synch option
+
+With apps script there's a way to use the iterator method too. You'll have to provide a timeout function as before, and also set the synch option (if you don't it won't fail, but there won't be a delay between calls)
+
+````
+  const rot = getRot({
+    delay: 1000,
+    sleep: Utilities.sleep,
+    synch: true
+  })
+````
+
+Rottler figures out which type of iterator to provide on whether you're using for or for await.
+
+````
+  const rowIterator = rot.rowIterator({ rows });
+  for   (let {row} of rowIterator) {
+    // do something with row
+  }
+````
