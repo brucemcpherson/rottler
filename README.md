@@ -303,12 +303,16 @@ const rot = new Rottle ({
 because Apps Script is synchronous and single threaded you can just do this 
 
 ````
+  rot.rottle()
+  const result = UrlFetchApp.fetch(url)
+````
+or if you prefer
+````
   Utilities.sleep (rot.waitTime())
   rot.use()
   const result = UrlFetchApp.fetch(url)
 
 ````
-
 
 
 ## Special treatment for loops

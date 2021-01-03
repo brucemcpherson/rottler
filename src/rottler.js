@@ -152,7 +152,6 @@ class Rottler {
   rowIterator({ rows }) {
     const self = this;
     const getItem = (rowNumber) => {
-
       const value = {
         index: rowNumber,
         row: rows[rowNumber],
@@ -164,8 +163,8 @@ class Rottler {
         value,
         done: false,
       };
-      return item
-    }
+      return item;
+    };
 
     return {
       // will be selected in for await of..
@@ -181,7 +180,7 @@ class Rottler {
               return Promise.resolve({
                 done: true,
               });
-            } else { 
+            } else {
               const item = getItem(this.rowNumber++);
               return self.rottle().then(() => item);
             }
@@ -203,8 +202,8 @@ class Rottler {
               };
             } else {
               const item = getItem(this.rowNumber++);
-              self.rottle()
-              return item
+              self.rottle();
+              return item;
             }
           },
         };
@@ -228,6 +227,16 @@ class Rottler {
       : Infinity;
   }
 
+  /**
+   * how many ms since first in scope attempt
+   * @return {number} ms since last time
+   */
+  sinceFirst() {
+    // first used will be have a first
+    return this.entry.lastUsedAt
+      ? this._now() - this.entry.uses[0]
+      : Infinity;
+  }
   /**
    * is it too soon to do another?
    * @return {boolean} whether its too soon
@@ -260,7 +269,7 @@ class Rottler {
     // how long to wait till next rate becomes available?
     const passed = this.sinceLast();
     // passed can never be infinity if avaiable > 0
-    const rateWait = this.available() > 0 ? 0 : this.period - passed;
+    const rateWait = this.available() > 0 ? 0 : this.period - this.sinceFirst();
     // how long to wait before delay is expired ?
     return this.tooSoon() ? Math.max(this.delay - passed, rateWait) : rateWait;
   }
@@ -309,6 +318,7 @@ class Rottler {
    * @return {RottlerEntry} the  entry if there is quota
    */
   use({ throwAsync = false } = {}) {
+    const now = this._now();
     const entry = this._cleanEntry();
 
     // if there's enough quota, then update it
@@ -335,7 +345,7 @@ class Rottler {
         });
       }
     } else {
-      const now = this._now();
+
       entry.lastUsedAt = now;
       entry.uses.push(now);
     }
