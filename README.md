@@ -347,6 +347,27 @@ On node, and client side it's more complicated. However, Rottle provides a conve
   }
 
 ````
+## transformation
+
+If you are using the rowIterator, you can also pass a transformation function that will be applied to each row like this
+
+````
+  const rowIterator = rot.rowIterator({ rows, transformer: ({row}) => row*10 });
+  for await (let { transformation } of rowIterator) {
+    // so something with the transformation for each row
+  }
+````
+The value returned by rowIterator is also passed as input to the transformer and looks like this
+
+| property| description |
+| ---- | ---- |
+| row | the row value |
+| index | the row number |
+| rows | the complete rows array |
+| transformation | the row after the transformer has been applied |
+| waitTime | how long this row had to wait before being allowed to execute |
+
+
 ## synch option
 
 With apps script there's a way to use the iterator method too. You'll have to provide a timeout function as before, and also set the synch option (if you don't it won't fail, but there won't be a delay between calls)
@@ -367,3 +388,5 @@ Rottler figures out which type of iterator to provide on whether you're using fo
     // do something with row
   }
 ````
+
+Transformations work in the same way as

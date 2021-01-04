@@ -147,22 +147,29 @@ class Rottler {
    *
    * @param {object} options
    * @param {*[]} options.rows an array of data to iterate through
+   * @param {function} [options.transformer] an optional function to apply to each row
    * @return {object} an iterator
    */
-  rowIterator({ rows }) {
+  rowIterator({ rows, transformer }) {
     const self = this;
-    const getItem = (rowNumber) => {
+    const getItem = ({waitTime, async, index}) => {
       const value = {
-        index: rowNumber,
-        row: rows[rowNumber],
+        index,
+        row: rows[index],
         rows,
-        waitTime: self.waitTime(),
+        waitTime,
+        transformation: null,
+        async
       };
 
       const item = {
         value,
         done: false,
       };
+      // an optional transformation
+      if (transformer) { 
+        value.transformation = transformer(value)
+      }
       return item;
     };
 
@@ -181,8 +188,13 @@ class Rottler {
                 done: true,
               });
             } else {
-              const item = getItem(this.rowNumber++);
-              return self.rottle().then(() => item);
+              const waitTime = self.waitTime()
+              return self.rottle()
+                .then(() => getItem({
+                  waitTime,
+                  index: this.rowNumber++,
+                  async: true
+                }))
             }
           },
         };
@@ -201,9 +213,14 @@ class Rottler {
                 done: true,
               };
             } else {
-              const item = getItem(this.rowNumber++);
+              const waitTime = self.waitTime();
+              // this#ll be a synchronous wait
               self.rottle();
-              return item;
+              return getItem({
+                waitTime,
+                index: this.rowNumber++,
+                async: false
+              });
             }
           },
         };

@@ -133,6 +133,25 @@ test("check async loop", async (t) => {
 });
 
 
+test("check transformer ", async (t) => {
+  const rows = [1, 2, 3];
+  const rot = new Rottler({
+    delay: 1000,
+  });
+  const transformer = ({ row }) => row * 10;
+  const rowIterator = rot.rowIterator({ rows , transformer });
+
+  for await (let result of rowIterator) {
+    // check transformation happened
+    t.is(result.async, true)
+    t.is(!result.index || Math.abs(result.waitTime - rot.delay) < 20, true )
+    t.is(result.index+1, result.row);
+    t.deepEqual(result.rows, rows);
+    t.deepEqual(result.transformation, rows[result.index] * 10);
+  }
+});
+
+
 test("check delaythrottling - async", async (t) => {
   const r = new Rottler({
     delay: 5000,
@@ -152,6 +171,8 @@ test("check delaythrottling - async", async (t) => {
   t.is(r.waitTime() >= r.delay - 100, true);
   await t.notThrowsAsync(() => r.rottle());
 });
+
+
 
 /*
 this needs to be tested on apps script
