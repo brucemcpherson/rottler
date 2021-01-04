@@ -389,4 +389,14 @@ Rottler figures out which type of iterator to provide on whether you're using fo
   }
 ````
 
-Transformations work in the same way as
+Transformations work in the same way for apps script as with node/javascript
+
+````
+  const rowIterator = rot.rowIterator({ rows, transformer: ({row}) => {
+    // do something with row
+    return updatedRow
+  }});
+  for   (let {transformation} of rowIterator) {
+    // do something with the transformation
+  }
+````
