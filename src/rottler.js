@@ -332,7 +332,7 @@ class Rottler {
     
     // the waitime applies to the delay - how long since the last thing happened
     // or it could be that we have to wait till the measurement period expires
-    const waitTime = Math.max( rateWait , delay)
+    const waitTime = Math.max( rateWait , delay, 0)
     return waitTime;
   }
 
