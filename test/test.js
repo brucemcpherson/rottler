@@ -12,7 +12,7 @@ test("init defaults", (t) => {
 test("check uses register with default delay", (t) => {
   const r = new Rottler();
   r.use()  
-  t.is(r.waitTime(), r.delay);
+  t.is(Math.abs(r.waitTime()- r.delay) < 2 , true);
   t.is(r.available(), r.rate - 1);
   // should fail because we havent waited long enough
   t.throws(()=>r.use());
@@ -41,7 +41,7 @@ test("check delaythrottling", async (t) => {
   // this one should throw because theres a delay on subsequent
   t.throws(() => r.use());
   // should not fail because weve rottled, but a ms could have passed
-  t.is(r.waitTime() >= r.delay - 1, true);
+  t.is(r.waitTime() >= r.delay - 10, true);
   await t.notThrowsAsync(() => r.rottle());
 });
 
@@ -133,23 +133,7 @@ test("check async loop", async (t) => {
 });
 
 
-test("check transformer ", async (t) => {
-  const rows = [1, 2, 3];
-  const rot = new Rottler({
-    delay: 1000,
-  });
-  const transformer = ({ row }) => row * 10;
-  const rowIterator = rot.rowIterator({ rows , transformer });
 
-  for await (let result of rowIterator) {
-    // check transformation happened
-    t.is(result.async, true)
-    t.is(!result.index || Math.abs(result.waitTime - rot.delay) < 20, true )
-    t.is(result.index+1, result.row);
-    t.deepEqual(result.rows, rows);
-    t.deepEqual(result.transformation, rows[result.index] * 10);
-  }
-});
 
 
 test("check delaythrottling - async", async (t) => {
@@ -172,6 +156,71 @@ test("check delaythrottling - async", async (t) => {
   await t.notThrowsAsync(() => r.rottle());
 });
 
+
+test("smoothing", async (t) => {
+  const r = new Rottler({
+    delay: 10,
+    rate: 2,
+    period: 1000,
+    smooth: true
+  });
+ 
+  t.notThrows(() => r.use());
+  // because of delay needed
+  t.throws(() => r.use());
+  await t.notThrowsAsync(() => r.rottle());
+  await t.notThrowsAsync(() => r.rottle());
+  await t.notThrowsAsync(() => r.rottle());
+});
+
+test("check smoothed transformer ", async (t) => {
+  const rows = [1,2,3,4,5,6,7,8,9,10,11,12,13];
+  const rot = new Rottler({
+    delay: 100,
+    rate: 5,
+    period: 1000,
+    smooth: true,
+    smoothMinimum: 0.3
+  });
+
+  const now = new Date().getTime()
+  const transformer = ({ row }) => row * 10;
+  const rowIterator = rot.rowIterator({ rows, transformer });
+
+  for await (let result of rowIterator) {
+    // check transformation happened
+    t.is(result.async, true);
+
+    t.is(!result.index || result.waitTime >= rot.delay - 20, true);
+    t.is(result.index + 1, result.row);
+    t.deepEqual(result.rows, rows);
+    t.deepEqual(result.transformation, rows[result.index] * 10);
+  }
+
+  const passed = new Date().getTime() - now
+  
+});
+
+
+
+test("check transformer ", async (t) => {
+  const rows = [1, 2, 3];
+  const rot = new Rottler({
+    delay: 1000,
+  });
+  const transformer = ({ row }) => row * 10;
+  const rowIterator = rot.rowIterator({ rows, transformer });
+
+  for await (let result of rowIterator) {
+    // check transformation happened
+    t.is(result.async, true);
+
+    t.is(!result.index || Math.abs(result.waitTime - rot.delay) < 30, true);
+    t.is(result.index + 1, result.row);
+    t.deepEqual(result.rows, rows);
+    t.deepEqual(result.transformation, rows[result.index] * 10);
+  }
+});
 
 
 /*

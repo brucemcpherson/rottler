@@ -200,6 +200,8 @@ These are the constructor options
 | throwError | true |whether an attempt to trigger .use or .useAsync outside of rate throws an error |
 | synch | false | how to handle waiting - you only need this if you plan to use the iterator method and provide a syncronous timeout via the timeout parameter |
 | sleep | | a synchronous sleep function for use when synch is true. This is mainly for Apps Script, and the correct value would be Utilities.sleep |
+| smooth | false | apply smoothing to wait times - see smoothing section later |
+| smoothMinimum | 0.25 | minimum threshold for smoothing when smooth is turned on - see later for explanation |
 
 ## methods
 
@@ -282,6 +284,53 @@ Some schemes reset the counter at specific times, or allow the carrying forward 
 
 You can of course reset the counters during use with rot.reset() if necessary.
 
+## Smoothing
+
+Let's say you have a rate limit of 8 per second, and you have many of these to do. Normal behavior will be to do as many of these as quickly as possible then wait till the older ones expire. This is fine if you have less then the rate to do, but it's probably better to evenly distribute the calls over the period if you have many to do. Smoothing will attempt to distribute calls over the rate measurement period by adjusting the delay between calls, but it will never be shorter than the specified delay parameters.
+
+A smoothMinimum parameter is also available (normally 0.25) and it controls at what point smoothing kicks in. The point of it is to avoid unnecessary waiting when you only have a small number (the 8/second example smoothing with a minimum of 0.25 only kicks in after 2 calls in the period), but to smooth if it looks like there will be many to do. Smoothing also works when part of a transformation - here's an example combining smoothing and a transformation iterator.
+
+````
+  const rows = [1,2,3,4,5,6,7,8,9,10,11,12,13];
+  const rot = new Rottler({
+    delay: 100,
+    rate: 5,
+    period: 1000,
+    smooth: true,
+    smoothMinimum: 0.3
+  });
+
+  const transformer = ({ row }) => row * 10;
+  const rowIterator = rot.rowIterator({ rows, transformer });
+
+  for await (let {transformation} of rowIterator) {
+    // so something with each transformation
+
+  }
+
+  
+});
+
+````
+## transformation
+
+If you are using the rowIterator, you can also pass a transformation function that will be applied to each row like this
+
+````
+  const rowIterator = rot.rowIterator({ rows, transformer: ({row}) => row*10 });
+  for await (let { transformation } of rowIterator) {
+    // so something with the transformation for each row
+  }
+````
+The value returned by rowIterator is also passed as input to the transformer and looks like this
+
+| property| description |
+| ---- | ---- |
+| row | the row value |
+| index | the row number |
+| rows | the complete rows array |
+| transformation | the row after the transformer has been applied |
+| waitTime | how long this row had to wait before being allowed to execute |
 
 ## Special Google Apps Script treatment
 
@@ -347,26 +396,6 @@ On node, and client side it's more complicated. However, Rottle provides a conve
   }
 
 ````
-## transformation
-
-If you are using the rowIterator, you can also pass a transformation function that will be applied to each row like this
-
-````
-  const rowIterator = rot.rowIterator({ rows, transformer: ({row}) => row*10 });
-  for await (let { transformation } of rowIterator) {
-    // so something with the transformation for each row
-  }
-````
-The value returned by rowIterator is also passed as input to the transformer and looks like this
-
-| property| description |
-| ---- | ---- |
-| row | the row value |
-| index | the row number |
-| rows | the complete rows array |
-| transformation | the row after the transformer has been applied |
-| waitTime | how long this row had to wait before being allowed to execute |
-
 
 ## synch option
 
@@ -400,3 +429,4 @@ Transformations work in the same way for apps script as with node/javascript
     // do something with the transformation
   }
 ````
+

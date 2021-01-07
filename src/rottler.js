@@ -51,11 +51,13 @@ class Rottler {
    * @param {object} options
    * @param {number} [options.period = 60000] measure period in ms
    * @param {number} [options.rate = 10] how many calls allowed in that period
-   * @param {number} [options.delay = 10] delay in ms between each call
+   * @param {number} [options.delay = 10] minimum delay in ms between each call
    * @param {function} [options.timeout] the setTimeout function (usuall setTimeout is the default)
    * @param {boolean} [options.throwError = true] whether to throw an error on rate limit problem
    * @param {boolean} [options.synch = false] synch or asynch rottle
    * @param {function} [options.sleep] a synch sleeping function (apps script - Utilities.sleep)
+   * @param {boolean} [options.smooth = false] whether to smooth delay over a rate
+   * @param {number} [options.smoothMinimum = 0.25] threshold for smoothing to kick in
    * @return {Rottler}
    */
   constructor({
@@ -66,6 +68,8 @@ class Rottler {
     throwError = true,
     synch = false,
     sleep,
+    smooth = false,
+    smoothMinimum = 0.25,
   } = {}) {
     this.period = period;
     this.rate = rate;
@@ -96,6 +100,12 @@ class Rottler {
       if (!timeout && typeof setTimeout !== "undefined")
         this.setTimeout = setTimeout;
       _checkFunction(this.setTimeout);
+    }
+    // this is the threshold over which smoothing starts
+    this.smoothMinimum = smoothMinimum;
+    this.smooth = smooth;
+    if (this.smoothMinimum < 0 || this.smoothMinimum > 1) {
+      throw new Error("smoothMinimum should be a between 0 and 1");
     }
   }
 
@@ -131,6 +141,7 @@ class Rottler {
     return this._entry;
   }
 
+
   /**
    * clean any uses that have expired from this entry
    * @return {RottlerEntry} the cleaned entry
@@ -152,14 +163,14 @@ class Rottler {
    */
   rowIterator({ rows, transformer }) {
     const self = this;
-    const getItem = ({waitTime, async, index}) => {
+    const getItem = ({ waitTime, async, index }) => {
       const value = {
         index,
         row: rows[index],
         rows,
         waitTime,
         transformation: null,
-        async
+        async,
       };
 
       const item = {
@@ -167,8 +178,8 @@ class Rottler {
         done: false,
       };
       // an optional transformation
-      if (transformer) { 
-        value.transformation = transformer(value)
+      if (transformer) {
+        value.transformation = transformer(value);
       }
       return item;
     };
@@ -188,13 +199,14 @@ class Rottler {
                 done: true,
               });
             } else {
-              const waitTime = self.waitTime()
-              return self.rottle()
-                .then(() => getItem({
+              const waitTime = self.waitTime();
+              return self.rottle().then(() => {
+                return getItem({
                   waitTime,
                   index: this.rowNumber++,
-                  async: true
-                }))
+                  async: true,
+                });
+              });
             }
           },
         };
@@ -219,7 +231,7 @@ class Rottler {
               return getItem({
                 waitTime,
                 index: this.rowNumber++,
-                async: false
+                async: false,
               });
             }
           },
@@ -250,9 +262,7 @@ class Rottler {
    */
   sinceFirst() {
     // first used will be have a first
-    return this.entry.lastUsedAt
-      ? this._now() - this.entry.uses[0]
-      : Infinity;
+    return this.entry.lastUsedAt ? this._now() - this.entry.uses[0] : Infinity;
   }
   /**
    * is it too soon to do another?
@@ -283,12 +293,47 @@ class Rottler {
    * @return {number} number available in period
    */
   waitTime() {
-    // how long to wait till next rate becomes available?
+
+    // if there hasnt been anything we're done - there's no need to wait
+    if (!this.entry.lastUsedAt) return 0;
+
+    // how long since the last thing happened
     const passed = this.sinceLast();
-    // passed can never be infinity if avaiable > 0
-    const rateWait = this.available() > 0 ? 0 : this.period - this.sinceFirst();
-    // how long to wait before delay is expired ?
-    return this.tooSoon() ? Math.max(this.delay - passed, rateWait) : rateWait;
+    // how long since the first time happened
+    const passedSinceFirst = this.sinceFirst();
+
+    // how long to wait before we move to the next period
+    const nextPeriodWait = this.period - passedSinceFirst
+
+    // do we have to wait till the next period anyway
+    const available = this.available()
+    const rateWait = available > 0 ? 0 : nextPeriodWait;
+
+    // the delay is as provided minues how long since the last thing
+    let delay = this.delay - passed;
+
+    // but if we're smoothing, then we can adjust the delay, but not the ratewait
+    // essentially a smooth is a modified delay
+    const waitsLeft = available - 1;
+    const left = waitsLeft / this.rate;
+    if (
+      this.smooth &&
+      !rateWait &&
+      this.rate &&
+      waitsLeft > 0 &&
+      this.period &&
+      left > this.smoothMinimum
+    ) {
+      // so dividing the time lefy to do it in - we get the delay
+      // but it can never be greater than the min delay
+      const x = delay
+      delay = Math.max(delay, Math.ceil(nextPeriodWait / waitsLeft));
+    }
+    
+    // the waitime applies to the delay - how long since the last thing happened
+    // or it could be that we have to wait till the measurement period expires
+    const waitTime = Math.max( rateWait , delay)
+    return waitTime;
   }
 
   // clear trackers
@@ -303,25 +348,28 @@ class Rottler {
    */
   rottle() {
     const wt = this.waitTime();
+
     if (this.synch) {
       // if we have a synch sleep function - ie apps script
       if (wt > 0) this.sleep(wt);
-      return this.use();
+      return this.use({ waitTime: wt });
     } else {
+
       return wt > 0
-        ? this.waiter(wt).then(() => this.useAsync())
-        : this.useAsync();
+        ? this.waiter(wt).then(() => this.useAsync({ waitTime: wt }))
+        : this.useAsync({ waitTime: wt });
     }
   }
 
   /**
    * like use but promisified
    */
-  useAsync() {
+  useAsync(options) {
     return new Promise((resolve, reject) => {
       try {
-        const entry = this.use();
+        const entry = this.use(options);
         resolve(entry);
+
       } catch (error) {
         reject(error);
       }
@@ -332,11 +380,13 @@ class Rottler {
    * test for quota left and update it if there is some
    * @param {object} [options]
    * @param {boolean} [options.throwsAsync] whether to reject ot throw
+   * @param {boolean} [options.waitTime] how long waited before us for info
    * @return {RottlerEntry} the  entry if there is quota
    */
-  use({ throwAsync = false } = {}) {
+  use({ throwAsync = false, waitTime } = {}) {
     const now = this._now();
     const entry = this._cleanEntry();
+    const sl = this.sinceLast()
 
     // if there's enough quota, then update it
     if (this.available() < 1) {
@@ -349,7 +399,7 @@ class Rottler {
           throwAsync,
         });
       }
-    } else if (this.waitTime() > 0) {
+    } else if (sl < this.delay ) {
       if (this._events.delay.listener) {
         this._events.delay.listener();
       }
@@ -362,11 +412,13 @@ class Rottler {
         });
       }
     } else {
-
       entry.lastUsedAt = now;
       entry.uses.push(now);
     }
-    return entry;
+    return {
+      ...entry,
+      waitTime,
+    };
   }
 
   ms(...args) {
