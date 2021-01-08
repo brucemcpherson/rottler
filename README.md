@@ -449,3 +449,8 @@ In many cases theses are interchangeable, but there are some differences that ma
 | apps script | yes | yes |
 | node | yes | yes |
 | javascript | yes | yes |
+
+
+### apps script sleep
+
+Utilities.sleep in apps script has a maximum wait time of 5mins, so if you use long rate limit periods, it's possible this will get exploded - so try to keep it smaller
