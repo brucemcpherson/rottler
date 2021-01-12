@@ -387,7 +387,7 @@ class Rottler {
     const now = this._now();
     const entry = this._cleanEntry();
     const sl = this.sinceLast()
-
+    
     // if there's enough quota, then update it
     if (this.available() < 1) {
       if (this._events.rate.listener) {
@@ -399,7 +399,8 @@ class Rottler {
           throwAsync,
         });
       }
-    } else if (sl < this.delay ) {
+    } else if (sl < this.delay - 2) {
+      // allow a 2ms leeway for processing time
       if (this._events.delay.listener) {
         this._events.delay.listener();
       }
