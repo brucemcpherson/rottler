@@ -141,7 +141,6 @@ class Rottler {
     return this._entry;
   }
 
-
   /**
    * clean any uses that have expired from this entry
    * @return {RottlerEntry} the cleaned entry
@@ -292,8 +291,7 @@ class Rottler {
    * how long to wait before we can go again
    * @return {number} number available in period
    */
-  waitTime() {
-
+  waitTime({ noSmooth = false } = {}) {
     // if there hasnt been anything we're done - there's no need to wait
     if (!this.entry.lastUsedAt) return 0;
 
@@ -303,10 +301,10 @@ class Rottler {
     const passedSinceFirst = this.sinceFirst();
 
     // how long to wait before we move to the next period
-    const nextPeriodWait = this.period - passedSinceFirst
+    const nextPeriodWait = this.period - passedSinceFirst;
 
     // do we have to wait till the next period anyway
-    const available = this.available()
+    const available = this.available();
     const rateWait = available > 0 ? 0 : nextPeriodWait;
 
     // the delay is as provided minues how long since the last thing
@@ -318,6 +316,7 @@ class Rottler {
     const left = waitsLeft / this.rate;
     if (
       this.smooth &&
+      !noSmooth &&
       !rateWait &&
       this.rate &&
       waitsLeft > 0 &&
@@ -326,13 +325,13 @@ class Rottler {
     ) {
       // so dividing the time lefy to do it in - we get the delay
       // but it can never be greater than the min delay
-      const x = delay
+      const x = delay;
       delay = Math.max(delay, Math.ceil(nextPeriodWait / waitsLeft));
     }
-    
+
     // the waitime applies to the delay - how long since the last thing happened
     // or it could be that we have to wait till the measurement period expires
-    const waitTime = Math.max( rateWait , delay, 0)
+    const waitTime = Math.max(rateWait, delay, 0);
     return waitTime;
   }
 
@@ -344,19 +343,20 @@ class Rottler {
 
   /**
    * this can be used to resolve once enough time has passed
+   * @param {object} options
+   * @param {boolean} [options.noSmooth = false] overrides smoothing
    * @return {Promise|RottlerEntry} will be resolved when it's safe to go
    */
-  rottle() {
-    const wt = this.waitTime();
+  rottle({ noSmooth = false } = {}) {
+    const wt = this.waitTime({ noSmooth });
 
     if (this.synch) {
       // if we have a synch sleep function - ie apps script
       if (wt > 0) this.sleep(wt);
       return this.use({ waitTime: wt });
     } else {
-
       return wt > 0
-        ? this.waiter(wt).then(() => this.useAsync({ waitTime: wt }))
+        ? this.waiter(wt).then(() => this.rottle({ noSmooth: true }))
         : this.useAsync({ waitTime: wt });
     }
   }
@@ -369,7 +369,6 @@ class Rottler {
       try {
         const entry = this.use(options);
         resolve(entry);
-
       } catch (error) {
         reject(error);
       }
@@ -386,10 +385,10 @@ class Rottler {
   use({ throwAsync = false, waitTime } = {}) {
     const now = this._now();
     const entry = this._cleanEntry();
-    const sl = this.sinceLast()
-    
+    const sl = this.sinceLast();
+    const available = this.available();
     // if there's enough quota, then update it
-    if (this.available() < 1) {
+    if (available < 1) {
       if (this._events.rate.listener) {
         this._events.rate.listener();
       }
@@ -445,6 +444,4 @@ class Rottler {
   }
 }
 
-
-
-module.exports = Rottler
+module.exports = Rottler;
